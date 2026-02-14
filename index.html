@@ -138,6 +138,8 @@
             scoreEl.innerText = '0';
             
             spawnBox();
+            
+            // تأكد من إلغاء أي حلقة سابقة قبل بدء حلقة جديدة
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
             animate();
         }
@@ -199,7 +201,7 @@
         function handleInput(e) {
             if (gameState === 'PLAYING') {
                 placeBox();
-                e.preventDefault();
+                if (e.cancelable) e.preventDefault();
             }
         }
 
@@ -213,15 +215,17 @@
         window.addEventListener('touchstart', handleInput, { passive: false });
 
         function animate() {
+            // تحديث الخلفية في كل إطار
             ctx.fillStyle = '#111';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+            // تحريك الكاميرا بسلاسة
             scrollY += (cameraY - scrollY) * 0.1;
 
             ctx.save();
             ctx.translate(0, scrollY);
 
-            // رسم البرج
+            // رسم البرج الثابت
             stack.forEach(box => {
                 ctx.fillStyle = box.color;
                 ctx.fillRect(box.x, box.y, box.w, BOX_HEIGHT);
@@ -229,18 +233,25 @@
                 ctx.strokeRect(box.x, box.y, box.w, BOX_HEIGHT);
             });
 
-            // رسم المكعب المتحرك
+            // رسم وتحديث المكعب المتحرك
             if (gameState === 'PLAYING' && currentBox) {
                 currentBox.x += currentBox.direction * currentBox.speed;
+                
                 ctx.fillStyle = currentBox.color;
                 ctx.fillRect(currentBox.x, currentBox.y, currentBox.w, BOX_HEIGHT);
+                ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                ctx.strokeRect(currentBox.x, currentBox.y, currentBox.w, BOX_HEIGHT);
                 
-                if (currentBox.x + currentBox.w > canvas.width || currentBox.x < 0) {
-                    currentBox.direction *= -1;
+                if (currentBox.x + currentBox.w > canvas.width) {
+                    currentBox.direction = -1;
+                    currentBox.x = canvas.width - currentBox.w;
+                } else if (currentBox.x < 0) {
+                    currentBox.direction = 1;
+                    currentBox.x = 0;
                 }
             }
 
-            // رسم الحطام
+            // رسم وتحديث الحطام
             debris.forEach((d, i) => {
                 d.vy += 0.5;
                 d.y += d.vy;
@@ -251,6 +262,8 @@
             });
 
             ctx.restore();
+
+            // استمرار الحلقة طالما اللعبة تعمل أو هناك حطام يتساقط
             animationFrameId = requestAnimationFrame(animate);
         }
 
@@ -264,6 +277,9 @@
                 ctx.fill();
             }
         }
+        
+        // رسم الخلفية الأولية عند التحميل
+        window.onload = drawStaticBg;
     </script>
 </body>
 </html>
