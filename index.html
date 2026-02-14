@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>برج التوازن</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            background-color: #111;
+            font-family: 'Tajawal', sans-serif;
+            overflow: hidden;
+            color: white;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+        }
+        #game-ui {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
+        }
+        .score-tag {
+            font-size: 4rem;
+            font-weight: bold;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+        }
+        #overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .start-btn {
+            background: #fff;
+            color: #000;
+            padding: 15px 60px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .start-btn:hover {
+            transform: scale(1.05);
+            background: #0ff;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-ui">
+        <div id="score" class="score-tag">0</div>
+    </div>
+
+    <div id="overlay">
+        <h1 id="title" class="text-5xl font-bold mb-4 text-white">برج التوازن</h1>
+        <p id="high-score" class="text-xl mb-8 text-gray-400">أعلى نتيجة: 0</p>
+        <div class="start-btn" onclick="initGame()">ابدأ اللعب</div>
+        <p class="mt-6 text-sm text-gray-500">انقر في أي مكان لوضع الكتلة</p>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const overlay = document.getElementById('overlay');
+        const highScoreEl = document.getElementById('high-score');
+
+        // Game constants
+        const BOX_HEIGHT = 40;
+        const INITIAL_WIDTH = 200;
+        const BASE_SPEED = 3;
+
+        // Game state
+        let stack = [];
+        let debris = [];
+        let currentBox = null;
+        let gameState = 'START';
+        let scrollY = 0;
+        let cameraY = 0;
+        let animationFrameId = null;
+        let highScore = localStorage.getItem('tower_high_score') || 0;
+        highScoreEl.innerText = `أعلى نتيجة: ${highScore}`;
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            if (gameState === 'START') drawIntro();
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function initGame() {
+            // Reset variables
+            stack = [{
+                x: (canvas.width / 2) - (INITIAL_WIDTH / 2),
+                y: canvas.height - BOX_HEIGHT,
+                w: INITIAL_WIDTH,
+                color: 'hsl(200, 80%, 50%)'
+            }];
+            debris = [];
+            cameraY = 0;
+            scrollY = 0;
+            gameState = 'PLAYING';
+            overlay.style.display = 'none';
+            scoreEl.innerText = '0';
+            
+            spawnBox();
+            
+            // Ensure any previous loop is stopped
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            animate();
+        }
+
+        function spawnBox() {
+            const lastBox = stack[stack.length - 1];
+            const direction = stack.length % 2 === 0 ? 1 : -1;
+            const hue = (stack.length * 15) % 360;
+            const speed = BASE_SPEED + (stack.length * 0.1);
+            
+            currentBox = {
+                x: direction === 1 ? -INITIAL_WIDTH : canvas.width,
+                y: lastBox.y - BOX_HEIGHT,
+                w: lastBox.w,
+                direction: direction,
+                speed: speed,
+                color: `hsl(${hue}, 80%, 55%)`
+            };
+        }
+
+        function placeBox() {
+            if (!currentBox || gameState !== 'PLAYING') return;
+
+            const lastBox = stack[stack.length - 1];
+            const delta = currentBox.x - lastBox.x;
+            const overlap = currentBox.w - Math.abs(delta);
+
+            if (overlap > 0) {
+                const newWidth = overlap;
+                const newX = delta > 0 ? currentBox.x : lastBox.x;
+                
+                // Physics debris
+                const debrisW = currentBox.w - overlap;
+                if (debrisW > 2) {
+                    const debrisX = delta > 0 ? newX + newWidth : currentBox.x;
+                    debris.push({
+                        x: debrisX,
+                        y: currentBox.y,
+                        w: debrisW,
+                        color: currentBox.color,
+                        vy: 0,
+                        vx: delta > 0 ? 2 : -2
+                    });
+                }
+
+                stack.push({
+                    x: newX,
+                    y: currentBox.y,
+                    w: newWidth,
+                    color: currentBox.color
+                });
+
+                scoreEl.innerText = stack.length - 1;
+                
+                // Raise camera
+                if (stack.length > 4) {
+                    cameraY += BOX_HEIGHT;
+                }
+                
+                spawnBox();
+            } else {
+                endGame();
+            }
+        }
+
+        function endGame() {
+            gameState = 'OVER';
+            const finalScore = stack.length - 1;
+            if (finalScore > highScore) {
+                highScore = finalScore;
+                localStorage.setItem('tower_high_score', highScore);
+            }
+            
+            document.getElementById('title').innerText = 'انتهت اللعبة!';
+            highScoreEl.innerText = `النتيجة: ${finalScore} | الأعلى: ${highScore}`;
+            overlay.style.display = 'flex';
+        }
+
+        // Input listeners
+        const handleAction = (e) => {
+            if (e.type === 'touchstart') e.preventDefault();
+            if (gameState === 'PLAYING') placeBox();
+        };
+
+        window.addEventListener('mousedown', handleAction);
+        window.addEventListener('touchstart', handleAction, { passive: false });
+
+        function animate() {
+            // Draw background
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Smooth camera transition
+            scrollY += (cameraY - scrollY) * 0.1;
+
+            ctx.save();
+            ctx.translate(0, scrollY);
+
+            // 1. Draw Static Tower
+            stack.forEach(box => {
+                ctx.fillStyle = box.color;
+                ctx.fillRect(box.x, box.y, box.w, BOX_HEIGHT);
+                ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(box.x, box.y, box.w, BOX_HEIGHT);
+            });
+
+            // 2. Draw & Update Current Box
+            if (gameState === 'PLAYING' && currentBox) {
+                currentBox.x += currentBox.direction * currentBox.speed;
+                
+                // Draw current box
+                ctx.fillStyle = currentBox.color;
+                ctx.fillRect(currentBox.x, currentBox.y, currentBox.w, BOX_HEIGHT);
+                ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+                ctx.strokeRect(currentBox.x, currentBox.y, currentBox.w, BOX_HEIGHT);
+                
+                // Bounce
+                if (currentBox.x + currentBox.w > canvas.width) {
+                    currentBox.direction = -1;
+                    currentBox.x = canvas.width - currentBox.w;
+                } else if (currentBox.x < 0) {
+                    currentBox.direction = 1;
+                    currentBox.x = 0;
+                }
+            }
+
+            // 3. Draw & Update Debris
+            debris.forEach((d, index) => {
+                d.vy += 0.6; // gravity
+                d.y += d.vy;
+                d.x += d.vx || 0;
+                
+                ctx.fillStyle = d.color;
+                ctx.fillRect(d.x, d.y, d.w, BOX_HEIGHT);
+                
+                // Cleanup
+                if (d.y > canvas.height + scrollY + 100) {
+                    debris.splice(index, 1);
+                }
+            });
+
+            ctx.restore();
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        function drawIntro() {
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#222';
+            for(let i=0; i<100; i++) {
+                ctx.beginPath();
+                ctx.arc(Math.random()*canvas.width, Math.random()*canvas.height, 1, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+        
+        window.onload = drawIntro;
+    </script>
+</body>
+</html>
